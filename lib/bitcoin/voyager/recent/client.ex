@@ -16,9 +16,9 @@ defmodule Bitcoin.Voyager.Recent.Client do
     end
   end
 
-  def prune do
+  def prune(prune_time) do
     Amnesia.Fragment.async do
-      History.where(seen < Server.current_timestamp() - @prune_time)
+      History.where(seen < prune_time)
         |> Amnesia.Selection.values
         |> Enum.each(&History.delete(&1))
     end

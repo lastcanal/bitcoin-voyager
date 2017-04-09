@@ -24,7 +24,7 @@ defmodule Bitcoin.Voyager.Recent.Server do
   end
 
   def handle_info({"subscribe.block", _block}, state) do
-    spawn_link fn -> Bitcoin.Voyager.Recent.Client.prune() end
+    _pruner = Bitcoin.Voyager.Recent.Client.prune(current_timestamp() - @prune_time)
     {:noreply, state}
   end
   def handle_info({"subscribe.transaction", transaction}, state) do
@@ -36,7 +36,7 @@ defmodule Bitcoin.Voyager.Recent.Server do
     {:noreply, state}
   end
   def handle_info({:EXIT, _from, reason} = message, state) do
-    Logger.error("EXIT #{__MODULE__} #{_from} #{reason}")
+    Logger.error("EXIT #{__MODULE__} #{reason}")
     {:noreply, state}
   end
 
@@ -45,22 +45,15 @@ defmodule Bitcoin.Voyager.Recent.Server do
     :ok
   end
 
-  def index_transaction(transaction) do
-    spawn_link fn ->
-      row = %History{hash: transaction.hash, seen: current_timestamp()}
-      Amnesia.Fragment.async do
-        Enum.each Enum.with_index(transaction.inputs),  &index_spend(row, &1)
-        Enum.each Enum.with_index(transaction.outputs), &index_output(row, &1)
-      end
+  def index_transaction(%{hash: hash, inputs: inputs, outputs: outputs} = tx) do
+    row = %History{hash: hash, seen: current_timestamp()}
+    Amnesia.Fragment.transaction do
+      Enum.each Enum.with_index(inputs),  &index_spend(row, &1)
+      Enum.each Enum.with_index(outputs), &index_output(row, &1)
     end
   end
 
-  def index_spend(row, {%{address: address, previous_output: previous_output}, index}) do
-    History.write(%History{row |
-      address: address, index: index, type: :spend, value: hash_previous_output(previous_output)
-    })
-  end
-  def index_spend(row, {%{previous_output: %{hash: hash, index: index}}, index}) do
+  def index_spend(row, {%{address: address, previous_output: %{hash: hash, index: index}}, index}) do
     case History.where(hash: hash, index: index) do
       nil ->
         fetch_previous_output(row, hash, index)
@@ -69,6 +62,9 @@ defmodule Bitcoin.Voyager.Recent.Server do
           address: address, index: index, type: :spend, value: value})
     end
   end
+  def index_spend(_row, {_txref, _index}) do
+    :ok
+  end
 
   def index_output(row, {%{address: address, value: value}, index}) do
     History.write(%History{row |
@@ -76,7 +72,7 @@ defmodule Bitcoin.Voyager.Recent.Server do
       value: value, type: :output
     })
   end
-  def index_output(_row, {_output, _index}) do
+  def index_output(_row, {_txref, _index}) do
     :ok
   end
 
