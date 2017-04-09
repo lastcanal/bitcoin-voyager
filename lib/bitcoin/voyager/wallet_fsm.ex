@@ -4,7 +4,7 @@ defmodule Bitcoin.Voyager.WalletFSM do
   alias Bitcoin.Voyager.Util
   alias Bitcoin.Voyager.Handlers.Blockchain
   alias Bitcoin.Voyager.Cache
-  alias Bitcoin.Voyager.Recent.History, as: Recent
+  alias Bitcoin.Voyager.Recent.Client, as: Recent
   require Logger
 
   defstruct [addresses: HashSet.new, parent: nil, page: 0, per_page: 10,

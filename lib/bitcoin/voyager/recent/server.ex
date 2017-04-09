@@ -24,7 +24,7 @@ defmodule Bitcoin.Voyager.Recent.Server do
   end
 
   def handle_info({"subscribe.block", _block}, state) do
-    spawn_link fn -> History.prune() end
+    spawn_link fn -> Bitcoin.Voyager.Recent.Client.prune() end
     {:noreply, state}
   end
   def handle_info({"subscribe.transaction", transaction}, state) do

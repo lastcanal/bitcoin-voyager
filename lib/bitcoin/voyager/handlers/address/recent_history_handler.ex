@@ -1,9 +1,9 @@
 defmodule Bitcoin.Voyager.Handlers.Address.RecentHistoryHandler do
-  alias Bitcoin.Voyager.Recent.History, as: Recent
+  alias Bitcoin.Voyager.Recent.Server, as: Recent
   alias Bitcoin.Voyager.Handlers.Address.History2Handler, as: Handler
   use Bitcoin.Voyager.Handler
 
-  def command, do: fn(client, address, _height, owner) ->
+  def command, do: fn(_client, address, _height, owner) ->
     ref = :erlang.make_ref()
     send(owner, {:libbitcoin_client, "address.recent_history", ref, Recent.history(address)})
     {:ok, ref}
