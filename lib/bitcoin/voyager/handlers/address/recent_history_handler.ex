@@ -1,5 +1,5 @@
 defmodule Bitcoin.Voyager.Handlers.Address.RecentHistoryHandler do
-  alias Bitcoin.Voyager.Recent.Server, as: Recent
+  alias Bitcoin.Voyager.Recent.Client, as: Recent
   alias Bitcoin.Voyager.Handlers.Address.History2Handler, as: Handler
   use Bitcoin.Voyager.Handler
 
