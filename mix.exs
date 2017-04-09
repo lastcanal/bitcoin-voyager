@@ -12,7 +12,7 @@ defmodule BitcoinVoyager.Mixfile do
 
   def application do
     [applications: [
-      :logger, :exjsx,
+      :logger, :exjsx, :amnesia,
       :gproc, :base58, :inflex,
       :ranch, :cowlib, :cowboy,
       :libbitcoin_client, :libbitcoin,
@@ -32,7 +32,8 @@ defmodule BitcoinVoyager.Mixfile do
       {:libbitcoin_client, github: "cancoin/elixir-libbitcoin-client"},
       {:libbitcoin, github: "cancoin/libbitcoin-nif"},
       {:base58, github: "cancoin/erl-base58"},
-      {:cherly, github: "lastcanal/cherly", branch: "develop"}
+      {:cherly, github: "lastcanal/cherly", branch: "develop"},
+      {:amnesia, github: "meh/amnesia", ref: "master"}
     ]
   end
 

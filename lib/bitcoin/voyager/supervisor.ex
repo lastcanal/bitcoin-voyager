@@ -14,7 +14,7 @@ defmodule Bitcoin.Voyager.Supervisor do
   def init([config]) do
     children = [
       supervisor(Voyager.ClientSupervisor, [config], restart: :permanent),
-      supervisor(Voyager.Subscriber.Supervisor, [config], restart: :permanent)
+      supervisor(Voyager.Subscriber.Supervisor, [config], restart: :permanent),
     ]
     supervise children, strategy: :one_for_one
   end

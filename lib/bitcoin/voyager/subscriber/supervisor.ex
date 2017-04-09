@@ -15,7 +15,8 @@ defmodule Bitcoin.Voyager.Subscriber.Supervisor do
       worker(Bitcoin.Voyager.Subscriber, [:transaction, config.transaction_uri], id: :transaction_subscriber, restart: :permanent),
       worker(Bitcoin.Voyager.Subscriber, [:block, config.block_uri], id: :block_subscriber, restart: :permanent),
       worker(Bitcoin.Voyager.AddressSubscriber, [], id: :address_subscriber, restart: :permanent),
-      worker(Bitcoin.Voyager.SpendSubscriber, [], id: :spend_subscriber, restart: :permanent)
+      worker(Bitcoin.Voyager.SpendSubscriber, [], id: :spend_subscriber, restart: :permanent),
+      worker(Bitcoin.Voyager.Recent.Server, [], id: :recent, restart: :permanent),
     ]
     supervise children, strategy: :one_for_one
   end

@@ -7,6 +7,10 @@ defmodule Bitcoin.Voyager.WalletHandler do
   """
   def init(req, _opts) do
     case transform_args(req) do
+      %{addresses: addresses, page: page, per_page: per_page} ->
+        addresses = String.split(addresses, ",")
+        {:ok, fsm} = WalletFSM.start_link(addresses, page, per_page, self)
+        {:cowboy_loop, req, %{fsm: fsm}, 5000}
       {:ok, %{addresses: addresses, page: page, per_page: per_page}, req} ->
         addresses = String.split(addresses, ",")
         {:ok, fsm} = WalletFSM.start_link(addresses, page, per_page, self)
@@ -27,9 +31,11 @@ defmodule Bitcoin.Voyager.WalletHandler do
   end
 
   def transform_args(req) do
+    qs_vals = :cowboy_req.parse_qs(req)
     {:ok, form_data, req} = :cowboy_req.body_qs(req)
     data = form_data
       |> Enum.into(%{"page" => 0, "per_page" => 20})
+      |> Map.merge(Enum.into(qs_vals, %{}))
       |> Util.atomify
     {:ok, data, req}
   end

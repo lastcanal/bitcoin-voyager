@@ -4,12 +4,13 @@ defmodule Bitcoin.Voyager.WalletFSM do
   alias Bitcoin.Voyager.Util
   alias Bitcoin.Voyager.Handlers.Blockchain
   alias Bitcoin.Voyager.Cache
+  alias Bitcoin.Voyager.Recent.History, as: Recent
+  require Logger
 
   defstruct [addresses: HashSet.new, parent: nil, page: 0, per_page: 10,
              ref: nil, height: -1, txrefs: [], wallet: nil, transactions: %{}]
 
-  @empty_wallet  %{balance: 0, transactions: [], unspent: [], height: 0}
-  @unspent_hash Base.decode16!("0000000000000000000000000000000000000000000000000000000000000000")
+  @empty_wallet  %{balance: 0, balance_unconfirmed: 0, transactions: [], unspent: [], height: 0}
 
   def client do
     :pg2.get_closest_pid(Bitcoin.Voyager.Client)
@@ -42,7 +43,7 @@ defmodule Bitcoin.Voyager.WalletFSM do
     {:ok, state} = fetch_histories(state)
     {:next_state, :history, %State{state | height: height}}
   end
-  def handle_info({:libbitcoin_client, "address.fetch_history", ref, history}, :history, %State{ref: refs, height: height} = state) do
+  def handle_info({:libbitcoin_client, "address.fetch_history2", ref, history}, :history, %State{ref: refs, height: height} = state) do
     refs = Map.delete(refs, ref)
     {:ok, state} = map_wallet(history, %State{state | ref: refs})
     if Map.size(refs) == 0 do
@@ -51,10 +52,10 @@ defmodule Bitcoin.Voyager.WalletFSM do
       if length(wallet[:transactions]) > 0 do
         {:ok, state} = fetch_transactions(%State{state | wallet: wallet})
         {:next_state, :transactions, state}
-        else
-          send state.parent, {:wallet, wallet}
-          {:stop, :normal, state}
-        end
+      else
+        send state.parent, {:wallet, wallet}
+        {:stop, :normal, state}
+      end
     else
       {:next_state, :history, state}
     end
@@ -78,7 +79,14 @@ defmodule Bitcoin.Voyager.WalletFSM do
     :timer.send_after(5000, :give_up)
     {:next_state, :transactions, %State{state | ref: refs}}
   end
-  def handle_info({:libbitcoin_client_error, _cmd, ref, :not_found}, :transactions, %State{ref: refs} = state) do
+  def handle_info({:libbitcoin_client_error, "transaction_pool.fetch_transaction", ref, :not_found}, :transactions, %State{ref: refs} = state) do
+    hash = Map.get(refs, ref)
+    refs = Map.delete(refs, ref)
+    refs = fetch_transaction(%{hash: hash}, refs)
+    state = %State{state | ref: refs}
+    {:next_state, :transactions, state}
+  end
+  def handle_info({:libbitcoin_client_error, cmd, ref, :not_found}, :transactions, %State{ref: refs} = state) do
     hash = Map.get(refs, ref)
     refs = Map.delete(refs, ref)
     state = %State{state | ref: refs}
@@ -103,9 +111,11 @@ defmodule Bitcoin.Voyager.WalletFSM do
     {:ok, %State{state | ref: Map.put(%{}, ref, nil)}}
   end
 
-  def fetch_histories(%State{addresses: addresses} = state) do
+  def fetch_histories(%State{addresses: addresses, txrefs: txrefs} = state) do
+    txrefs = Enum.reduce(addresses, txrefs, &fetch_mempool_history(&1, &2))
+    state = %State{state | txrefs: txrefs}
     refs = Enum.reduce addresses, %{}, fn(address, acc) ->
-      {:ok, ref} = Client.address_history(client, address, 0)
+      {:ok, ref} = Client.address_history2(client, address, 0)
       Map.put(acc, ref, address)
     end
     {:ok, %State{state | ref: refs}}
@@ -120,7 +130,18 @@ defmodule Bitcoin.Voyager.WalletFSM do
     {:ok, %State{state | ref: refs, wallet: %{wallet | transactions: transactions}}}
   end
 
-  def fetch_cached_transaction(%{hash: hash, height: height}, state) do
+  def fetch_mempool_history(address, acc) do
+    address
+      |> Recent.history
+      |> Enum.map fn(%{hash: hash, type: type, value: value} = row) ->
+        row
+          |> Map.put(:height, 0)
+          |> Map.put(:hash, Base.decode16!(hash, case: :lower))
+          |> Map.put(:value, value)
+      end
+  end
+
+  def fetch_cached_transaction(%{hash: hash}, %State{height: height} = state) do
     case Cache.get(Blockchain.TransactionHandler, %{cache_height: height}, [hash]) do
       {:ok, raw_transaction} ->
         fetched_transaction(hash, raw_transaction, state)
@@ -132,7 +153,7 @@ defmodule Bitcoin.Voyager.WalletFSM do
     {:ok, ref} = Client.pool_transaction(client, hash)
     Map.put(acc, ref, hash)
   end
-  def fetch_transaction(%{hash: hash, height: height}, acc) do
+  def fetch_transaction(%{hash: hash}, acc) do
     {:ok, ref} = Client.blockchain_transaction(client, hash)
     Map.put(acc, ref, hash)
   end
@@ -144,18 +165,29 @@ defmodule Bitcoin.Voyager.WalletFSM do
   end
 
   def map_wallet(history, %State{txrefs: txrefs} = state) do
-    {:ok, %State{state | txrefs: txrefs ++ history}}
+    txrefs = Enum.uniq_by history ++ txrefs, fn
+      (%{type: :output, hash: hash, index: index}) ->
+        <<0, hash :: binary, index :: unsigned-size(32)>>
+      (%{type: :spend, hash: hash, index: index}) ->
+        <<1, hash :: binary, index :: unsigned-size(32)>>
+    end
+    {:ok, %State{state | txrefs: txrefs}}
   end
 
   def merge_txrefs(txrefs), do: merge_txrefs(txrefs, [])
   def merge_txrefs([], transactions), do: transactions
   def merge_txrefs([%{hash: hash} = txref|txrefs], [%{hash: hash} = transaction|acc]) do
-    transaction = %{transaction | value: transaction.value + txref_value(txref.type, txref.value)}
     merge_txrefs(txrefs, [transaction|acc])
   end
-  def merge_txrefs([%{hash: _hash} = txref|txrefs], acc) do
+  def merge_txrefs([%{type: :spend, hash: _hash} = txref|txrefs], acc) do
     transaction = %{
-      hash: txref.hash, height: txref.height, type: txref.type,
+      hash: txref.hash, type: txref.type, height: txref.height, 
+      value: txref_value(txref.type, txref.value)}
+    merge_txrefs(txrefs, [transaction|acc])
+  end
+  def merge_txrefs([%{type: :output, hash: _hash} = txref|txrefs], acc) do
+    transaction = %{
+      hash: txref.hash, type: txref.type, height: txref.height, 
       value: txref_value(txref.type, txref.value)}
     merge_txrefs(txrefs, [transaction|acc])
   end
@@ -179,16 +211,42 @@ defmodule Bitcoin.Voyager.WalletFSM do
   end
 
   def reduce_wallet(txrefs) do
-    wallet = Enum.reduce txrefs, @empty_wallet, fn
-      (%{spend_hash: @unspent_hash, value: value} = row,
-       %{balance: balance, transactions: transactions, unspent: unspent} = acc) ->
-        %{acc | balance: balance + value,
-                transactions: [format_output(row)|transactions],
-                unspent: [format_unspent(row)|unspent]}
-      (row, %{transactions: transactions} = acc) ->
-        %{acc | transactions: [format_output(row),format_spend(row)|transactions]}
-    end
+    spends = reduce_spends(txrefs)
+    wallet = Enum.reduce(txrefs, @empty_wallet, &reduce_txref(&1, &2, txrefs))
     %{wallet | transactions: format_transactions(wallet[:transactions])}
+  end
+
+  def reduce_txref(%{type: :spend, value: checksum} = row,
+    %{transactions: transactions, unspent: unspent} = acc, txrefs) do
+    case lookup_previous_out(txrefs, checksum) do
+      {:error, :not_found} ->
+        acc
+      {:ok, previous_ref} ->
+        row = %{row | value: previous_ref.value}
+        %{acc | transactions: [format_spend(row)|transactions]}
+    end
+  end
+  def reduce_txref(%{type: :output, value: value, height: height} = row,
+    %{balance: balance, balance_unconfirmed: balance_unconfirmed,
+      transactions: transactions, unspent: unspent} = acc, _txrefs) when height > 0 do
+    %{acc | balance: balance + value,
+            balance_unconfirmed: balance_unconfirmed + value,
+            transactions: [format_output(row)|transactions],
+            unspent: [format_unspent(row)|unspent]}
+  end
+  def reduce_txref(%{type: :output, value: value, height: height} = row,
+    %{balance: balance, balance_unconfirmed: balance_unconfirmed,
+      transactions: transactions, unspent: unspent} = acc, _txrefs) do
+    %{acc | balance_unconfirmed: balance_unconfirmed + value,
+            transactions: [format_output(row)|transactions],
+            unspent: [format_unspent(row)|unspent]}
+  end
+
+  def reduce_spends(txrefs) do
+    :sets.from_list(Enum.reduce(txrefs, [], fn
+      (%{type: :spend, value: checksum}, acc) -> [checksum|acc]
+      (%{type: :output}, acc) -> acc
+    end))
   end
 
   def reduce_transactions(%State{addresses: addresses, wallet: wallet, transactions: transactions} = state) do
@@ -219,13 +277,14 @@ defmodule Bitcoin.Voyager.WalletFSM do
   end
 
   def reduce_unspent(%State{addresses: addresses, wallet: wallet, transactions: transactions} = state) do
-    unspent = wallet |> Map.get(:unspent) |> Enum.map(fn(%{hash: hash, index: index} = row) ->
+    unspent = wallet |> Map.get(:unspent) |> Enum.map(fn(%{height: height, hash: hash, index: index} = row) ->
       case Map.get(transactions, hash) do
         %{outputs: outputs} = transaction ->
           output = Enum.at(outputs, index)
             |> Map.put(:index, index)
             |> Map.put(:checksum, checksum(hash, index))
-          out = transaction
+          transaction
+            |> Map.put(:height, height)
             |> Map.delete(:inputs)
             |> Map.delete(:outputs)
             |> Map.merge(output)
@@ -239,17 +298,37 @@ defmodule Bitcoin.Voyager.WalletFSM do
     {:ok, %State{state | wallet:  %{wallet | unspent: unspent}}}
   end
 
+  def lookup_previous_out(txrefs, checksum) do
+    found = Enum.filter txrefs, fn
+      (%{type: :output, hash: hash, index: index}) ->
+        checksum(hash, index) == checksum
+      (_other) ->
+        false
+    end
+    case found do
+      [previous_ref|_] ->
+        {:ok, previous_ref}
+      _ ->
+        {:error, :not_found}
+    end
+  end
+
   def sort_txrefs(txrefs) do
-    Enum.sort txrefs, fn(a, b) ->
-      if a.height != b.height do
-        a.height > b.height
-      else
-        if a.hash != b.hash do
-          a.hash < b.hash
-        else
-          a.index < b.index
-        end
-      end
+    txrefs
+      |> Enum.reject(&nil == &1)
+      |> Enum.sort fn
+        (%{height: _} = a, %{height: _} = b) ->
+          if a.height != b.height do
+            a.height > b.height
+          else
+            if a.hash != b.hash, do: a.hash < b.hash, else: a.index < b.index
+          end
+        (%{height: _}, _) ->
+          true
+        (_, %{height: _}) ->
+          false
+        (a, b) ->
+          if a.hash != b.hash, do: a.hash < b.hash, else: a.index < b.index
     end
   end
 
@@ -261,28 +340,20 @@ defmodule Bitcoin.Voyager.WalletFSM do
       |> Enum.reverse
   end
 
-  def format_unspent(row) do
-    %{hash: row.output_hash,
-      index: row.output_index,
-      height: row.output_height,
-      value: row.value,
-      type: :unspent}
+  def format_unspent(%{type: :output} = row) do
+    row
   end
-
-  def format_output(row) do
-    %{hash: row.output_hash,
-      index: row.output_index,
-      height: row.output_height,
-      value: row.value,
-      type: :output}
+  def format_output(%{type: :output} = row) do
+    row
   end
-
-  def format_spend(row) do
-    %{hash: row.spend_hash,
-      index: row.spend_index,
-      height: row.spend_height,
-      value: row.value,
-      type: :spend}
+  def format_output(%{type: :spend}) do
+    nil
+  end
+  def format_spend(%{type: :spend, hash: hash, index: index} = row) do
+    Map.put(row, :checksum, checksum(hash, index))
+  end
+  def format_spend(%{type: :output}) do
+    nil
   end
 
   def to_hex(hash) do
@@ -295,8 +366,6 @@ defmodule Bitcoin.Voyager.WalletFSM do
 
   def checksum(hash, index) do
     Libbitcoin.Client.spend_checksum(hash, index)
-      |> Integer.to_string(16)
-      |> String.downcase
   end
 
 end
