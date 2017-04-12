@@ -8,6 +8,7 @@ defmodule Bitcoin.Voyager.Recent.Server do
   use Amnesia
 
   @prune_time (60 * 60 * 72)
+  @fetch_transaction_timeout 5000
 
   defmodule State do
     defstruct []
@@ -24,7 +25,7 @@ defmodule Bitcoin.Voyager.Recent.Server do
   end
 
   def handle_info({"subscribe.block", _block}, state) do
-    _pruner = Bitcoin.Voyager.Recent.Client.prune(current_timestamp() - @prune_time)
+    Bitcoin.Voyager.Recent.Client.prune(current_timestamp() - @prune_time)
     {:noreply, state}
   end
   def handle_info({"subscribe.transaction", transaction}, state) do
@@ -79,27 +80,31 @@ defmodule Bitcoin.Voyager.Recent.Server do
   def fetch_previous_output(row, hash, index) do
     client = :pg2.get_closest_pid(Bitcoin.Voyager.Client)
     prev_out_hash = Base.decode16!(hash, case: :lower)
-    pid = fetch_transaction(row, hash, index)
-    Libbitcoin.Client.blockchain_transaction(client, prev_out_hash, pid)
+    receiver = receive_transaction!(row, hash, index)
+    Libbitcoin.Client.blockchain_transaction(client, prev_out_hash, receiver)
   end
 
-  def fetch_transaction(row, hash, index) do
+  def receive_transaction!(row, hash, index) do
     spawn_link fn->
       receive do
-         {:libbitcoin_client, "blockchain.fetch_transaction", _ref, raw_transaction} ->
-           %{outputs: outputs} = :libbitcoin.tx_decode(raw_transaction)
-           %{address: address, value: value} = Enum.at(outputs, index)
-           Amnesia.Fragment.async do
-             History.write(%History{row |
+        {:libbitcoin_client, "blockchain.fetch_transaction", _ref, raw_transaction} ->
+          %{outputs: outputs} = :libbitcoin.tx_decode(raw_transaction)
+          %{address: address, value: value} = Enum.at(outputs, index)
+          Amnesia.Fragment.async do
+            History.write(%History{row |
               address: address, index: index, type: :spend,
               value: value
              })
-            end
-        _other ->
-          :ok
+           end
+        {:libbitcoin_client_error, "blockchain.fetch_transaction", _ref, :not_found} ->
+          {:error, :not_found}
+        {:libbitcoin_client_error, "blockchain.fetch_transaction", _ref, error} ->
+          Logger.error "#{__MODULE__} fetch transaction error #{error}"
+          {:error, error}
       after
-        1000 ->
-          :ok
+        @fetch_transaction_timeout ->
+          Logger.error "#{__MODULE__} fetch transaction timeout"
+          {:error, :timeout}
       end
     end
   end
