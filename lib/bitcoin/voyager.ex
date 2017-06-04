@@ -40,8 +40,8 @@ defmodule Bitcoin.Voyager do
              { '/api/v1/address/recent_history/:address', Voyager.RESTHandler, [Voyager.Handlers.Address.RecentHistoryHandler] },
              { '/api/v1/wallet', Voyager.WalletHandler, [] },
              { '/api/v1/websocket', Voyager.WebSocketHandler, [] },
-             {'/', :cowboy_static, {:priv_file, :bitcoin_voyager, 'web/build/assets/index.html'}},
-             { '/assets/[...]', :cowboy_static, {:priv_dir, :bitcoin_voyager, 'web/build/assets'}}
+             {'/', :cowboy_static, {:priv_file, :bitcoin_voyager, 'web/build/index.html'}},
+             { '/assets/[...]', :cowboy_static, {:priv_dir, :bitcoin_voyager, 'web/build'}}
            ] }
      ])
   end

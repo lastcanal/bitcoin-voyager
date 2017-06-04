@@ -43,7 +43,7 @@ defmodule Bitcoin.Voyager.WalletFSM do
     {:ok, state} = fetch_histories(state)
     {:next_state, :history, %State{state | height: height}}
   end
-  def handle_info({:libbitcoin_client, "address.fetch_history2", ref, history}, :history, %State{ref: refs, height: height} = state) do
+  def handle_info({:libbitcoin_client, "address.fetch_history3", ref, history}, :history, %State{ref: refs, height: height} = state) do
     refs = Map.delete(refs, ref)
     {:ok, state} = map_wallet(history, %State{state | ref: refs})
     if Map.size(refs) == 0 do
@@ -115,7 +115,7 @@ defmodule Bitcoin.Voyager.WalletFSM do
     txrefs = Enum.reduce(addresses, txrefs, &fetch_mempool_history(&1, &2))
     state = %State{state | txrefs: txrefs}
     refs = Enum.reduce addresses, %{}, fn(address, acc) ->
-      {:ok, ref} = Client.address_history2(client, address, 0)
+      {:ok, ref} = Client.blockchain_history3(client, address, 0)
       Map.put(acc, ref, address)
     end
     {:ok, %State{state | ref: refs}}
@@ -365,7 +365,7 @@ defmodule Bitcoin.Voyager.WalletFSM do
   end
 
   def checksum(hash, index) do
-    Libbitcoin.Client.spend_checksum(hash, index)
+    :libbitcoin.spend_checksum(hash, index)
   end
 
 end
