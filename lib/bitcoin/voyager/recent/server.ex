@@ -18,6 +18,7 @@ defmodule Bitcoin.Voyager.Recent.Server do
   end
 
   def init([]) do
+    Logger.info "starting recent history server"
     true = register!
     Process.flag(:trap_exit, true)
     {:ok, %State{}}

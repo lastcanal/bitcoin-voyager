@@ -20,9 +20,13 @@ defmodule Bitcoin.Voyager.Subscriber do
   end
 
   def handle_info({:libbitcoin_client, type, payload}, %State{type: type, client: client} = state) do
+    #IO.inspect {:type, type, payload}
     :ok = Subscriber.ack_message(client)
     :ok = broadcast_payload(type, payload)
     {:noreply, state}
+  end
+  def handle_info({client, payload}, %State{type: type, client: client} = state) when type in [:heart, :block, :transaction] do
+    handle_info({:libbitcoin_client, type, payload}, state)
   end
 
   def broadcast_payload(:transaction = type, payload) when is_binary(payload) do
