@@ -8,7 +8,19 @@ defmodule Bitcoin.Voyager.Recent.Client do
   use GenServer
   use Amnesia
 
-  def history(address, owner \\ self) do
+  def since_offset(offset) do
+    since(Server.current_timestamp() - offset)
+  end
+
+  def since(time) do
+    Amnesia.Fragment.async do
+      History.where(seen > time)
+        |> Amnesia.Selection.values
+        |> Enum.map(&Map.from_struct(&1))
+    end
+  end
+
+  def history(address) do
     Amnesia.Fragment.sync do
       History.match(address: address)
         |> Amnesia.Selection.values
