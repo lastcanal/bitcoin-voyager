@@ -29,8 +29,8 @@ defmodule BitcoinVoyager.Mixfile do
       {:ranch, "~> 1.1.0", override: true, compile: gnu_make},
       {:cowlib, github: "ninenines/cowlib", override: true, ref: "master", compile: gnu_make},
       {:cowboy, github: "ninenines/cowboy", ref: "2.0.0-pre.3", compile: gnu_make},
-      {:libbitcoin_client, github: "cancoin/elixir-libbitcoin-client"},
-      {:libbitcoin, github: "cancoin/libbitcoin-nif"},
+      {:libbitcoin_client, github: "lastcanal/elixir-libbitcoin-client"},
+      {:libbitcoin, github: "lastcanal/libbitcoin-nif"},
       {:base58, github: "cancoin/erl-base58"},
       {:cherly, github: "lastcanal/cherly", branch: "develop"},
       {:amnesia, github: "meh/amnesia", ref: "master"}

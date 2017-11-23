@@ -28,11 +28,14 @@ defmodule Bitcoin.Voyager do
              { '/api/v1/blockchain/block_transaction_hashes/:hash', Voyager.RESTHandler, [ Voyager.Handlers.Blockchain.BlockTransactionHashesHandler] },
              { '/api/v1/blockchain/transaction/:hash', Voyager.RESTHandler, [Voyager.Handlers.Blockchain.TransactionHandler] },
              { '/api/v1/blockchain/history/:address/:height', Voyager.RESTHandler, [Voyager.Handlers.Blockchain.HistoryHandler] },
+             { '/api/v1/blockchain/history3/:address/:height', Voyager.RESTHandler, [Voyager.Handlers.Blockchain.History3Handler] },
              { '/api/v1/blockchain/transaction_index/:hash', Voyager.RESTHandler, [Voyager.Handlers.Blockchain.TransactionIndexHandler] },
              { '/api/v1/blockchain/spend/:hash/:index', Voyager.RESTHandler, [Voyager.Handlers.Blockchain.SpendHandler] },
              { '/api/v1/blockchain/stealth/:filter/:height', Voyager.RESTHandler, [Voyager.Handlers.Blockchain.StealthHandler] },
              { '/api/v1/transaction_pool/transaction/:hash', Voyager.RESTHandler, [Voyager.Handlers.TransactionPool.TransactionHandler] },
              { '/api/v1/transaction_pool/validate', Voyager.RESTHandler, [Voyager.Handlers.TransactionPool.ValidateHandler] },
+             { '/api/v1/transaction_pool/validate2', Voyager.RESTHandler, [Voyager.Handlers.TransactionPool.Validate2Handler] },
+             { '/api/v1/transaction_pool/broadcast', Voyager.RESTHandler, [Voyager.Handlers.TransactionPool.Validate2Handler] },
              { '/api/v1/protocol/broadcast_transaction', Voyager.RESTHandler, [Voyager.Handlers.Protocol.BroadcastTransactionHandler] },
              { '/api/v1/protocol/total_connections', Voyager.RESTHandler, [Voyager.Handlers.Protocol.TotalConnectionsHandler] },
              { '/api/v1/address/history/:address/:height', Voyager.RESTHandler, [Voyager.Handlers.Address.HistoryHandler] },
@@ -40,8 +43,8 @@ defmodule Bitcoin.Voyager do
              { '/api/v1/address/recent_history/:address', Voyager.RESTHandler, [Voyager.Handlers.Address.RecentHistoryHandler] },
              { '/api/v1/wallet', Voyager.WalletHandler, [] },
              { '/api/v1/websocket', Voyager.WebSocketHandler, [] },
-             {'/', :cowboy_static, {:priv_file, :bitcoin_voyager, 'web/build/assets/index.html'}},
-             { '/assets/[...]', :cowboy_static, {:priv_dir, :bitcoin_voyager, 'web/build/assets'}}
+             {'/', :cowboy_static, {:priv_file, :bitcoin_voyager, 'web/build/index.html'}},
+             { '/assets/[...]', :cowboy_static, {:priv_dir, :bitcoin_voyager, 'web/build'}}
            ] }
      ])
   end
