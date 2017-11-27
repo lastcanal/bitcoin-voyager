@@ -87,7 +87,7 @@ defmodule Bitcoin.Voyager.Recent.Server do
     spawn_link fn->
       receive do
          {:libbitcoin_client, "blockchain.fetch_transaction", _ref, raw_transaction} ->
-           %{outputs: outputs} = :libbitcoin.tx_decode(raw_transaction)
+           %{outputs: outputs} = :libbitcoin.tx_decode(raw_transaction, Bitcoin.Voyager.recent)
            %{address: address, value: value} = Enum.at(outputs, index)
            Amnesia.Fragment.async do
              History.write(%History{row |

@@ -72,6 +72,10 @@ defmodule Bitcoin.Voyager do
     end
   end
 
+  def network do
+    Application.get_env(:bitcoin_voyager, :network, :mainnet)
+  end
+
   def write_pid! do
     {:ok, pidfile} = :application.get_env(:bitcoin_voyager, :pidfile)
     :ok = File.write(pidfile, :os.getpid)

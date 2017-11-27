@@ -162,7 +162,7 @@ defmodule Bitcoin.Voyager.WalletFSM do
   end
 
   def fetched_transaction(hash, raw_transaction, state) do
-    transaction = :libbitcoin.tx_decode(raw_transaction, :testnet) |> Map.delete(:value)
+    transaction = :libbitcoin.tx_decode(raw_transaction, Bitcoin.Voyager.network) |> Map.delete(:value)
     transactions = Map.put(state.transactions, hash, transaction)
     %State{state | transactions: transactions}
   end

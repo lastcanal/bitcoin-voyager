@@ -12,7 +12,7 @@ defmodule Bitcoin.Voyager.Handlers.Blockchain.TransactionHandler do
   end
 
   def transform_reply(reply) do
-    tx = :libbitcoin.tx_decode(reply, :testnet)
+    tx = :libbitcoin.tx_decode(reply, Bitcoin.Voyager.network)
     {:ok, %{transaction: tx}}
   end
 

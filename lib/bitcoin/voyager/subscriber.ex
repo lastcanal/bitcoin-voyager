@@ -20,13 +20,14 @@ defmodule Bitcoin.Voyager.Subscriber do
   end
 
   def handle_info({:libbitcoin_client, type, payload}, %State{type: type, client: client} = state) do
+    IO.inspect {:got, type, payload}
     :ok = Subscriber.ack_message(client)
     :ok = broadcast_payload(type, payload)
     {:noreply, state}
   end
 
   def broadcast_payload(:transaction = type, payload) when is_binary(payload) do
-    case :libbitcoin.tx_decode(payload) do
+    case :libbitcoin.tx_decode(payload, Bitcoin.Voyager.network) do
       %{hash: hash} = transaction ->
         hash = Base.decode16!(hash, case: :lower)
         :ok = Cache.put(Blockchain.TransactionHandler, [hash], payload, %{cache_height: 0})
